@@ -1,0 +1,23 @@
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1
+ENV YADA_REQUIRE_API_KEY=1
+
+RUN useradd -m -u 1001 kara
+
+WORKDIR /app
+
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
+
+COPY --chown=kara:kara . /app
+RUN mkdir -p /app/scratch && chown kara:kara /app/scratch
+
+USER kara
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+  CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5).status==200 else 1)" || exit 1
+
+CMD ["bash", "-lc", "uvicorn yada_scraper:app --host 0.0.0.0 --port ${PORT:-8000}"]

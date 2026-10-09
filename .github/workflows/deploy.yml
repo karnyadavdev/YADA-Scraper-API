@@ -1,0 +1,35 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      EC2_HOST: ${{ secrets.EC2_HOST }}
+      EC2_USER: ${{ secrets.EC2_USER }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Skip when secrets are not configured
+        if: env.EC2_HOST == ''
+        run: echo "EC2_HOST secret not set yet - skipping deploy."
+
+      - name: Write SSH key
+        if: env.EC2_HOST != ''
+        env:
+          SSH_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+      - name: Deploy to EC2 (git pull + docker compose build + up)
+        if: env.EC2_HOST != ''
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 \
+            "$EC2_USER@$EC2_HOST" \
+            "cd yada-scraper-api && git pull --ff-only && sudo docker compose up -d --build && sudo docker image prune -f && sudo docker compose ps"
