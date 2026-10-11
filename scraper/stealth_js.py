@@ -278,48 +278,85 @@ HEADLESS_SPOOF_JS = """
     }
 
     // 2. navigator.plugins spoof
+    // Modern Chromium (verified against Playwright's bundled Chromium):
+    // 5 PDF viewer plugins all named internal-pdf-viewer, 2 mimeTypes
+    // (application/pdf + text/pdf), item()/namedItem() return null OOB,
+    // and no NaCl-era plugin entry (that list is the pre-2021 fingerprint).
     if (navigator.plugins.length === 0) {
+        const pluginNames = [
+            'PDF Viewer',
+            'Chrome PDF Viewer',
+            'Chromium PDF Viewer',
+            'Microsoft Edge PDF Viewer',
+            'WebKit built-in PDF'
+        ];
+        const mimeDefs = [
+            { type: 'application/pdf', suffixes: 'pdf', description: 'Portable Document Format' },
+            { type: 'text/pdf', suffixes: 'pdf', description: 'Portable Document Format' }
+        ];
+
+        const fakePlugins = [];
+        for (const name of pluginNames) {
+            const plugin = Object.create(Plugin.prototype);
+            const mimes = [];
+            for (const def of mimeDefs) {
+                const mime = Object.create(MimeType.prototype);
+                Object.defineProperties(mime, {
+                    type: { get: () => def.type },
+                    suffixes: { get: () => def.suffixes },
+                    description: { get: () => def.description },
+                    enabledPlugin: { get: () => plugin }
+                });
+                mimes.push(mime);
+            }
+            Object.defineProperties(plugin, {
+                name: { get: () => name },
+                filename: { get: () => 'internal-pdf-viewer' },
+                description: { get: () => 'Portable Document Format' },
+                length: { get: () => mimes.length }
+            });
+            for (let i = 0; i < mimes.length; i++) {
+                Object.defineProperty(plugin, i, { get: () => mimes[i] });
+            }
+            fakePlugins.push(plugin);
+        }
+
         const fakePluginArray = Object.create(PluginArray.prototype);
-        const fakePlugin = Object.create(Plugin.prototype);
-        const fakeMimeType = Object.create(MimeType.prototype);
-
-        Object.defineProperties(fakeMimeType, {
-            type: { get: () => 'application/pdf' },
-            suffixes: { get: () => 'pdf' },
-            description: { get: () => 'Portable Document Format' },
-            enabledPlugin: { get: () => fakePlugin }
-        });
-
-        Object.defineProperties(fakePlugin, {
-            name: { get: () => 'Chrome PDF Plugin' },
-            filename: { get: () => 'internal-pdf-viewer' },
-            description: { get: () => 'Portable Document Format' },
-            length: { get: () => 1 },
-            0: { get: () => fakeMimeType }
-        });
-
         Object.defineProperties(fakePluginArray, {
-            length: { get: () => 3 },
-            0: { get: () => fakePlugin },
-            1: { get: () => Object.create(Plugin.prototype, { name: { get: () => 'Chrome PDF Viewer' }, length: { get: () => 1 } }) },
-            2: { get: () => Object.create(Plugin.prototype, { name: { get: () => 'Native Client' }, length: { get: () => 1 } }) },
+            length: { get: () => fakePlugins.length },
             refresh: { value: () => {} },
-            item: { value: function(i) { return this[i]; } },
-            namedItem: { value: function(n) { return this[0]; } }
+            item: { value: function(i) { return (i >= 0 && i < fakePlugins.length) ? fakePlugins[i] : null; } },
+            namedItem: { value: function(n) { return fakePlugins.find(p => p.name === n) || null; } },
+            [Symbol.iterator]: { value: function*() { yield* fakePlugins; } }
         });
-
+        for (let i = 0; i < fakePlugins.length; i++) {
+            Object.defineProperty(fakePluginArray, i, { get: () => fakePlugins[i] });
+        }
         Object.defineProperty(navigator, 'plugins', {
             get: () => fakePluginArray
         });
 
+        const rootMimes = [];
+        for (const def of mimeDefs) {
+            const mime = Object.create(MimeType.prototype);
+            Object.defineProperties(mime, {
+                type: { get: () => def.type },
+                suffixes: { get: () => def.suffixes },
+                description: { get: () => def.description },
+                enabledPlugin: { get: () => fakePlugins[0] }
+            });
+            rootMimes.push(mime);
+        }
         const fakeMimeTypeArray = Object.create(MimeTypeArray.prototype);
         Object.defineProperties(fakeMimeTypeArray, {
-            length: { get: () => 1 },
-            0: { get: () => fakeMimeType },
-            item: { value: function(i) { return this[i]; } },
-            namedItem: { value: function(n) { return this[0]; } }
+            length: { get: () => rootMimes.length },
+            item: { value: function(i) { return (i >= 0 && i < rootMimes.length) ? rootMimes[i] : null; } },
+            namedItem: { value: function(n) { return rootMimes.find(m => m.type === n) || null; } },
+            [Symbol.iterator]: { value: function*() { yield* rootMimes; } }
         });
-
+        for (let i = 0; i < rootMimes.length; i++) {
+            Object.defineProperty(fakeMimeTypeArray, i, { get: () => rootMimes[i] });
+        }
         Object.defineProperty(navigator, 'mimeTypes', {
             get: () => fakeMimeTypeArray
         });

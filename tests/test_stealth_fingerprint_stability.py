@@ -1,4 +1,9 @@
-from scraper.stealth_js import AUDIO_SPOOF_JS, CANVAS_SPOOF_JS, NAVIGATOR_SPOOF_JS
+from scraper.stealth_js import (
+    AUDIO_SPOOF_JS,
+    CANVAS_SPOOF_JS,
+    HEADLESS_SPOOF_JS,
+    NAVIGATOR_SPOOF_JS,
+)
 
 
 def test_canvas_spoof_is_stable_and_does_not_mutate_source_canvas():
@@ -19,3 +24,18 @@ def test_navigator_values_are_stable_within_the_session():
     assert "get: () => DOWNLINK" in NAVIGATOR_SPOOF_JS
     assert "const BATTERY_LEVEL =" in NAVIGATOR_SPOOF_JS
     assert "level: BATTERY_LEVEL" in NAVIGATOR_SPOOF_JS
+
+
+def test_plugin_spoof_matches_modern_chromium_pdf_viewers():
+    for name in (
+        "'PDF Viewer'",
+        "'Chrome PDF Viewer'",
+        "'Chromium PDF Viewer'",
+        "'Microsoft Edge PDF Viewer'",
+        "'WebKit built-in PDF'",
+    ):
+        assert name in HEADLESS_SPOOF_JS
+    assert "internal-pdf-viewer" in HEADLESS_SPOOF_JS
+    assert "'text/pdf'" in HEADLESS_SPOOF_JS
+    assert "Native Client" not in HEADLESS_SPOOF_JS
+    assert "'application/x-nacl'" not in HEADLESS_SPOOF_JS
