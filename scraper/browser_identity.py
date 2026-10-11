@@ -162,6 +162,12 @@ def _chrome_headers(ua):
     else:
         brand = f'"Google Chrome";v="{ver}", "Chromium";v="{ver}", {grease_str}'
 
+    # Cache-Control trade-off, A/B tested over 36 sites / 144 hits per
+    # variant (scratch/cache_control_ab_*.json): keeping it wins on
+    # glassdoor/amazon/medium, losing only on reddit + tripadvisor raw
+    # fetches - and both of those route through dedicated source paths
+    # in the ladder before generic headers are ever sent. Net 106/144
+    # vs 105/144 with structural protection for the losers. Keep it.
     headers = {
         "User-Agent": ua,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
@@ -238,13 +244,23 @@ def make_identity(chrome_only=False):
     hdrs["Accept-Language"] = f"{loc},{loc.split('-')[0]};q=0.9"
 
 
-    # Map TLS impersonation based on the actual browser family
+    # Map TLS impersonation based on the actual browser family.
+    # UA131 -> chrome131 was A/B tested against chrome120 on 15 targets
+    # (scratch/tls_fingerprint_abc_benchmark.py, results JSON alongside):
+    # matched chrome131 turns Quora 0/4 -> 3/4 and Reddit 8KB bot-shell
+    # -> 167KB real content with zero regressions elsewhere. Older UA
+    # versions keep the battle-tested chrome120 pin until tested.
     if b_type == "chrome":
         chrome_ver = _get_chrome_ver(ua)
-        _TLS_MAP = {"131": "chrome120", "130": "chrome120", "128": "chrome120", "120": "chrome120"}
+        _TLS_MAP = {"131": "chrome131", "130": "chrome120", "128": "chrome120", "120": "chrome120"}
         imp = _TLS_MAP.get(chrome_ver, "chrome120")
     elif b_type == "edge":
-        imp = "edge101"
+        # Modern Edge is Chromium: Edg/131's real TLS fingerprint tracks
+        # chrome131, not curl_cffi's stale edge101. A/B tested on 11
+        # targets (scratch/edge_ab_benchmark.py): chrome131 TLS turns
+        # HomeDepot 0/4 -> 4/4, Quora 0/4 -> 3/4, Reddit bot-shell ->
+        # 167KB, Glassdoor 0/4 -> 2/4, zero regressions.
+        imp = "chrome131"
     elif b_type == "safari":
         imp = random.choice(["safari15_3", "safari15_5", "safari17_0"])
     elif b_type == "firefox":

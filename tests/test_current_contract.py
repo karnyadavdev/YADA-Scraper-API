@@ -31,7 +31,7 @@ def test_make_identity_uses_only_chromium_families():
     for _ in range(100):
         identity = make_identity()
         assert identity.browser_type in {"chrome", "edge"}
-        assert identity.impersonate_id in {"chrome120", "edge101"}
+        assert identity.impersonate_id in {"chrome131", "chrome120"}
 
 
 def test_source_name_finds_supported_hosts():
