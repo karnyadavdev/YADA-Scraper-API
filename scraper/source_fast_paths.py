@@ -3305,7 +3305,7 @@ async def scrape_instagram_bulk(urls, timeout=45.0):
                 final_url=url
             )
 
-    async with AsyncSession(impersonate="chrome120") as session:
+    async with AsyncSession(impersonate="chrome120", max_clients=min(10, max(1, len(urls)))) as session:
         tasks = [fetch(session, url) for url in urls]
         return await asyncio.gather(*tasks)
 

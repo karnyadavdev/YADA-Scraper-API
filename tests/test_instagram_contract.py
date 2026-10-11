@@ -81,6 +81,47 @@ def test_instagram_bulk_result_rejects_missing_or_unrelated_data(
     assert f"Requested URL: {requested}" in result.html
 
 
+class _FakeBulkSession:
+    def __init__(self, **kwargs):
+        _FakeBulkSession.captured = dict(kwargs)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+
+@pytest.mark.asyncio
+async def test_instagram_bulk_caps_session_concurrency(monkeypatch):
+    async def fake_safe_get(session, url, headers=None, timeout=None):
+        return _response(url, "<html><head></head><body></body></html>")
+
+    monkeypatch.setattr(sources, "AsyncSession", _FakeBulkSession)
+    monkeypatch.setattr(sources, "safe_get", fake_safe_get)
+
+    urls = [f"https://www.instagram.com/p{i}/" for i in range(15)]
+    results = await sources.scrape_instagram_bulk(urls)
+
+    assert len(results) == 15
+    assert _FakeBulkSession.captured["max_clients"] == 10
+
+
+@pytest.mark.asyncio
+async def test_instagram_bulk_small_list_opens_only_what_it_needs(monkeypatch):
+    async def fake_safe_get(session, url, headers=None, timeout=None):
+        return _response(url, "<html><head></head><body></body></html>")
+
+    monkeypatch.setattr(sources, "AsyncSession", _FakeBulkSession)
+    monkeypatch.setattr(sources, "safe_get", fake_safe_get)
+
+    urls = [f"https://www.instagram.com/p{i}/" for i in range(4)]
+    results = await sources.scrape_instagram_bulk(urls)
+
+    assert len(results) == 4
+    assert _FakeBulkSession.captured["max_clients"] == 4
+
+
 @pytest.mark.asyncio
 async def test_instagram_rich_extractor_is_explicit_and_auto_stays_compact(monkeypatch):
     compact = object()
