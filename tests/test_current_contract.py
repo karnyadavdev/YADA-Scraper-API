@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import time
 from types import SimpleNamespace
 
@@ -319,7 +319,7 @@ def test_reddit_json_url_rewrites_posts_and_listings():
 def test_instagram_meta_extract_includes_profile_image():
     html = """
     <html><head>
-      <meta property="og:title" content="OpenAI (@openai) • Instagram photos and videos">
+      <meta property="og:title" content="OpenAI (@openai) â€¢ Instagram photos and videos">
       <meta property="og:description" content="6M Followers, 7 Following, 1,790 Posts">
       <meta property="og:image" content="https://cdn.example/openai.jpg">
     </head><body></body></html>
@@ -677,7 +677,7 @@ async def test_captcha_body_is_warning_not_null(monkeypatch):
     monkeypatch.setattr(engine_mod, "stealth_scrape", fake_stealth_scrape)
 
     engine = ScraperEngine()
-    result = await engine._try_layer4("https://example.com/captcha", make_identity(chrome_only=True), time.time(), [])
+    result = await engine._try_layer4("https://example.com/captcha", make_identity(), time.time(), [])
 
     assert result.ok is False
     assert result.data["html"] == html
@@ -698,7 +698,7 @@ async def test_no_capture_stays_failed(monkeypatch):
     monkeypatch.setattr(engine_mod, "full_scrape", fake_full_scrape)
 
     engine = ScraperEngine()
-    result = await engine._try_layer5("https://example.com/timeout", make_identity(chrome_only=True), time.time(), [])
+    result = await engine._try_layer5("https://example.com/timeout", make_identity(), time.time(), [])
 
     assert result.ok is False
     assert result.captured is False

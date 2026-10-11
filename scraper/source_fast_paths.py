@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import html as html_lib
 import json
 import os
@@ -509,7 +509,7 @@ def _compact_meta_html(html, url, family):
         "something went wrong",
         "try again later",
         "e002 retry",
-        "login • instagram",
+        "login â€¢ instagram",
         "authwall",
         "checkpoint",
     ]
@@ -3230,9 +3230,9 @@ def _instagram_bulk_result(url, response, start):
 
     combined = " ".join((title, description, soup.get_text(" ", strip=True)[:3000])).lower()
     blocked_markers = (
-        "login • instagram",
+        "login â€¢ instagram",
         "log in to instagram",
-        "sign up • instagram",
+        "sign up â€¢ instagram",
         "create an account or log in",
         "checkpoint_required",
         "challenge_required",
@@ -3240,7 +3240,7 @@ def _instagram_bulk_result(url, response, start):
         "page isn't available",
         "page is not available",
     )
-    generic_titles = {"", "instagram", "instagram login", "login • instagram"}
+    generic_titles = {"", "instagram", "instagram login", "login â€¢ instagram"}
     metadata_specific = bool(
         len(description) >= 20
         and (title.strip().lower() not in generic_titles or image_url)
@@ -4242,7 +4242,7 @@ async def _ebay_playwright_warm_bulk(urls, timeout=65.0, cookies=None, solve_cha
     from .browser_identity import make_identity
     from .browser_scraping import _restore_cookies, _close_browser_page
 
-    fp = make_identity(chrome_only=True)
+    fp = make_identity()
     stealth = Stealth()
 
     proxy_settings = browser_proxy_options()

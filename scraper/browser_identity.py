@@ -40,7 +40,7 @@ def _pick_browser(ua):
         return "chrome"
 
 
-def _get_ua(chrome_only=False):
+def _get_ua():
     if has_fake_ua and _ua_gen:
         try:
             for _ in range(5):
@@ -217,8 +217,8 @@ def _safari_headers(ua):
 
 
 
-def make_identity(chrome_only=False):
-    (b_type, ua) = _get_ua(chrome_only=chrome_only)
+def make_identity():
+    (b_type, ua) = _get_ua()
 
 
 

@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 from collections import OrderedDict
 from html.parser import HTMLParser
 import inspect
@@ -602,6 +602,16 @@ async def _bounded_http(coro, url, label, timeout=None, deadline=None):
 
 
 def _capture_score(capture):
+    # Ranking heuristic for "best capture" when several layers all
+    # returned something. Design intent, in order of importance:
+    #   1. Readable TEXT dominates. HTML length is nearly free
+    #      (x0.001, capped at 200pts) because bot-walls and JS shells
+    #      ship large HTML with little prose; real pages invert that.
+    #   2. A valid 2xx/3xx status is worth +500 - enough that a small
+    #      real page beats a huge error/interstitial body.
+    #   3. Penalty ladder: retry_recommended (-750) > possible_js_shell
+    #      (-500) > hard-block status (-250) > thin_text (-200). The
+    #      engine's own retry verdict outweighs any static-size signal.
     html_len = capture.get("html_length", 0)
     text_len = capture.get("text_length", 0)
     status = capture.get("status_code", 0)
@@ -870,7 +880,7 @@ class ScraperEngine:
         elif mode == "layer4":
             res = await self._try_layer4(
                 url,
-                make_identity(chrome_only=True),
+                make_identity(),
                 start,
                 attempts,
                 solve_challenges=solve_challenges,
@@ -878,7 +888,7 @@ class ScraperEngine:
         elif mode == "layer5":
             res = await self._try_layer5(
                 url,
-                make_identity(chrome_only=True),
+                make_identity(),
                 start,
                 attempts,
                 solve_challenges=solve_challenges,
@@ -906,13 +916,14 @@ class ScraperEngine:
 
     async def compare(self, url, solve_challenges=False):
         start = time.time()
+        deadline = start + _scrape_budget()
         fp1 = make_identity()
         fp_cookies = make_identity()
-        fp2 = make_identity(chrome_only=True)
-        fp3 = make_identity(chrome_only=True)
+        fp2 = make_identity()
+        fp3 = make_identity()
         valid_cookies = self.memory.get_valid_cookies(url)
 
-        tasks = [
+        coros = [
             raw_scrape(url),
             mobile_scrape(url),
             quick_scrape(url, fingerprint=fp1),
@@ -924,20 +935,37 @@ class ScraperEngine:
                 url,
                 fingerprint=fp2,
                 solve_challenges=solve_challenges,
+                deadline=deadline,
             ),
             self._admitted_browser_call(
                 full_scrape,
                 url,
                 fingerprint=fp3,
                 solve_challenges=solve_challenges,
+                deadline=deadline,
             ),
             scrape_ultimate(url)
         ]
 
         if valid_cookies:
-            tasks.append(quick_scrape(url, fingerprint=fp_cookies, cookies=valid_cookies))
+            coros.append(quick_scrape(url, fingerprint=fp_cookies, cookies=valid_cookies))
 
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        tasks = [asyncio.create_task(coro) for coro in coros]
+        done, pending = await asyncio.wait(
+            tasks, timeout=max(0.1, deadline - time.time())
+        )
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+
+        results = []
+        for task in tasks:
+            if task in done:
+                exc = task.exception()
+                results.append(exc if exc is not None else task.result())
+            else:
+                results.append(None)
 
         layers = []
         best_time = float("inf")
@@ -945,6 +973,21 @@ class ScraperEngine:
 
         def process_result(res, name, display_name):
             nonlocal best_time, best_layer
+            if res is None:
+                layers.append({
+                    "layer": name,
+                    "display_name": display_name,
+                    "success": False, "status_code": 0,
+                    "captured": False,
+                    "capture_state": "no_capture",
+                    "reason": "Skipped: compare budget exhausted",
+                    "time": 0.0,
+                    "html_length": 0,
+                    "text_length": 0,
+                    "diagnostics": ["timeout"],
+                    "final_url": url,
+                })
+                return
             if isinstance(res, Exception):
                 layers.append({
                     "layer": name,
@@ -1183,7 +1226,7 @@ class ScraperEngine:
             return self._budget_stop(url, start, attempts, captures, html)
 
         if allow_browser and "layer4_stealth" not in skip:
-            fp_stealth = make_identity(chrome_only=True)
+            fp_stealth = make_identity()
             res = await self._admitted_browser_call(
                 stealth_scrape,
                 url,
@@ -1208,7 +1251,7 @@ class ScraperEngine:
         if time.time() >= deadline - _BUDGET_STOP_FLOOR:
             return self._budget_stop(url, start, attempts, captures, html)
 
-        fp_full = make_identity(chrome_only=True)
+        fp_full = make_identity()
         res = await self._admitted_browser_call(
             full_scrape,
             url,
@@ -1463,7 +1506,7 @@ class ScraperEngine:
         url = self._rewrite_reddit_url(url)
         start = time.time()
         attempts = []
-        fp = make_identity(chrome_only=True)
+        fp = make_identity()
         res = await self._try_layer4(url, fp, start, attempts, solve_challenges=solve_challenges)
         if res.ok:
             self._warmup_fingerprints[self.memory._get_domain(url)] = fp
@@ -1480,7 +1523,7 @@ class ScraperEngine:
         attempts = []
         fp = self._warmup_fingerprints.get(self.memory._get_domain(url))
         if fp is None:
-            fp = make_identity(chrome_only=True)
+            fp = make_identity()
         res = await self._try_layer2(url, fp, start, attempts)
         await self.memory.record_attempt(
             url,

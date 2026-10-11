@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import os
 import random
 import re
@@ -319,7 +319,7 @@ async def stealth_scrape(url, fingerprint=None, timeout=20.0, retries=1, solve_c
     # solving has been removed.
     del solve_challenges
     if fingerprint is None:
-        fingerprint = make_identity(chrome_only=True)
+        fingerprint = make_identity()
 
     start = time.time()
 
@@ -400,7 +400,7 @@ async def stealth_scrape(url, fingerprint=None, timeout=20.0, retries=1, solve_c
                     await _close_browser_page(page, ctx, browser)
                     if attempt < retries:
                         await asyncio.sleep(random_sleep(base=2.0, jitter=1.0))
-                        fingerprint = make_identity(chrome_only=True)
+                        fingerprint = make_identity()
                         continue
                     return BrowseOutput(
                         success=False,
@@ -442,7 +442,7 @@ async def stealth_scrape(url, fingerprint=None, timeout=20.0, retries=1, solve_c
             await _close_browser_page(page, ctx, browser)
             if attempt < retries:
                 await asyncio.sleep(random_sleep(base=2.0, jitter=1.0))
-                fingerprint = make_identity(chrome_only=True)
+                fingerprint = make_identity()
                 continue
 
             return BrowseOutput(
@@ -467,7 +467,7 @@ async def full_scrape(
     # solving has been removed.
     del solve_challenges
     if fingerprint is None:
-        fingerprint = make_identity(chrome_only=True)
+        fingerprint = make_identity()
 
     start = time.time()
     parsed = urlparse(url)
@@ -554,7 +554,7 @@ async def full_scrape(
                     await _close_browser_page(page, ctx, browser)
                     if attempt < retries:
                         await asyncio.sleep(random_sleep(base=3.0, jitter=1.5))
-                        fingerprint = make_identity(chrome_only=True)
+                        fingerprint = make_identity()
                         continue
                     return BrowseOutput(
                         success=False,
@@ -596,7 +596,7 @@ async def full_scrape(
             await _close_browser_page(page, ctx, browser)
             if attempt < retries:
                 await asyncio.sleep(random_sleep(base=3.0, jitter=1.5))
-                fingerprint = make_identity(chrome_only=True)
+                fingerprint = make_identity()
                 continue
 
             return BrowseOutput(
@@ -763,8 +763,8 @@ _interstitial_patterns = [
     re.compile(r"^\s*403\s+forbidden\s+403\s+forbidden", re.I),
     re.compile(r"<title>\s*access denied\s*-\s*macy", re.I),
     re.compile(r"<title>\s*403\s*-\s*access denied\s*\|\s*edmunds", re.I),
-    re.compile(r"403\s+access denied.*you don[’']t have permission to access this page", re.I | re.S),
-    re.compile(r"you don[’']t have access to this page", re.I),
+    re.compile(r"403\s+access denied.*you don[â€™']t have permission to access this page", re.I | re.S),
+    re.compile(r"you don[â€™']t have access to this page", re.I),
     re.compile(r"humans only", re.I),
     re.compile(r"cf-turnstile", re.I),
     re.compile(r"error page\s*\|\s*ebay", re.I),

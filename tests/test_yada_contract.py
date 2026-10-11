@@ -1,4 +1,4 @@
-import time
+﻿import time
 from types import SimpleNamespace
 
 import pytest
@@ -205,7 +205,7 @@ async def test_captcha_body_is_warning_not_null(monkeypatch):
     monkeypatch.setattr(engine_mod, "stealth_scrape", fake_stealth_scrape)
 
     engine = ScraperEngine()
-    result = await engine._try_layer4("https://example.com/captcha", make_identity(chrome_only=True), time.time(), [])
+    result = await engine._try_layer4("https://example.com/captcha", make_identity(), time.time(), [])
 
     assert result.ok is False
     assert result.data["html"] == html
@@ -226,7 +226,7 @@ async def test_no_capture_stays_failed(monkeypatch):
     monkeypatch.setattr(engine_mod, "full_scrape", fake_full_scrape)
 
     engine = ScraperEngine()
-    result = await engine._try_layer5("https://example.com/timeout", make_identity(chrome_only=True), time.time(), [])
+    result = await engine._try_layer5("https://example.com/timeout", make_identity(), time.time(), [])
 
     assert result.ok is False
     assert result.captured is False
