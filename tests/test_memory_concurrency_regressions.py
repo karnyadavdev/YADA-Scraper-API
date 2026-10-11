@@ -92,7 +92,7 @@ async def test_save_failure_remains_dirty_and_later_success_clears_error(monkeyp
     memory = SiteMemory(str(path))
     real_write = memory._write_file
 
-    def fail_write(data):
+    def fail_write(data, is_clear=False):
         raise PermissionError("read-only target")
 
     monkeypatch.setattr(memory, "_write_file", fail_write)
@@ -136,13 +136,13 @@ async def test_concurrent_save_and_flush_serialized_under_io_lock(tmp_path):
 
     real_write = memory._write_file
 
-    def monitored_write(data):
+    def monitored_write(data, is_clear=False):
         nonlocal concurrent_writes, max_concurrent_writes
         concurrent_writes += 1
         max_concurrent_writes = max(max_concurrent_writes, concurrent_writes)
         try:
             time.sleep(0.02)
-            real_write(data)
+            real_write(data, is_clear)
         finally:
             concurrent_writes -= 1
 
@@ -167,7 +167,7 @@ async def test_flush_error_does_not_deadlock_with_concurrent_mutations(tmp_path)
     path = tmp_path / "memory.json"
     memory = SiteMemory(str(path))
 
-    def failing_write(data):
+    def failing_write(data, is_clear=False):
         raise PermissionError("Simulated write failure")
 
     memory._write_file = failing_write
@@ -260,7 +260,7 @@ async def test_flush_cancellation_restores_dirty(tmp_path):
     # Block inside _write_file using an Event so we can cancel flush while in-flight
     write_entered = asyncio.Event()
 
-    def blocked_write(data):
+    def blocked_write(data, is_clear=False):
         write_entered.set()
         # busy wait/sleep briefly until released
         time.sleep(0.05)

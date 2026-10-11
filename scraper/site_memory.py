@@ -339,10 +339,7 @@ class SiteMemory:
         ok = False
         try:
             async with self._io_lock:
-                try:
-                    merged = await asyncio.to_thread(self._write_file, data, is_clear)
-                except TypeError:
-                    merged = await asyncio.to_thread(self._write_file, data)
+                merged = await asyncio.to_thread(self._write_file, data, is_clear)
             ok = True
             self._dirty = False
             self.last_save_error = None

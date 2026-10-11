@@ -143,14 +143,6 @@ AUDIO_SPOOF_JS = """
             ));
         }
     };
-
-    // spoof oscillator timing too
-    const originalCreateOscillator = AudioContext.prototype.createOscillator;
-    AudioContext.prototype.createOscillator = function() {
-        const osc = originalCreateOscillator.call(this);
-        osc._spoofed = true;
-        return osc;
-    };
 })();
 """
 

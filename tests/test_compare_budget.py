@@ -7,7 +7,6 @@ them as timeout entries while preserving any layers that finished.
 """
 
 import asyncio
-import os
 import time
 
 import pytest

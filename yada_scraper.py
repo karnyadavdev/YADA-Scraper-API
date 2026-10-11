@@ -756,7 +756,7 @@ async def health():
             "Selective Android mobile HTTP with an explicit mobile mode",
             "WAF detection recorded as a hint without suppressing browser capture",
             "Atomic site memory with root-domain lookup and deferred bulk flush",
-            "Guarded Layer 5 browser path and reusable Playwright context pool",
+            "Guarded Layer 5 browser path",
             "Optional compact structured source mode",
         ],
         "endpoints": {
