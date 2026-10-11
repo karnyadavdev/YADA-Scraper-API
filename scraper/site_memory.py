@@ -304,7 +304,7 @@ class SiteMemory:
             info = self.profiles.get(domain)
             if not info:
                 info = SiteInfo(domain=domain)
-            info.cookies = cookies
+            info.cookies = copy.deepcopy(cookies)
             info.cookies_last_updated = time.time()
             if "layer2_cookie" in info.failed_layers:
                 info.failed_layers.remove("layer2_cookie")

@@ -184,6 +184,21 @@ async def test_flush_error_does_not_deadlock_with_concurrent_mutations(tmp_path)
 
 
 @pytest.mark.asyncio
+async def test_save_cookies_copies_caller_list(tmp_path):
+    path = tmp_path / "memory.json"
+    memory = SiteMemory(str(path))
+    cookies = [{"name": "sid", "value": "1"}]
+
+    await memory.save_cookies("https://example.com", cookies)
+
+    cookies.append({"name": "injected", "value": "2"})
+    cookies[0]["value"] = "tampered"
+
+    stored = memory.get_valid_cookies("https://example.com")
+    assert stored == [{"name": "sid", "value": "1"}]
+
+
+@pytest.mark.asyncio
 async def test_second_instance_does_not_clobber(tmp_path):
     path = str(tmp_path / "site_memory.json")
     a, b = SiteMemory(path), SiteMemory(path)

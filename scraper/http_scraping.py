@@ -164,22 +164,25 @@ async def quick_scrape(url, fingerprint=None, timeout=7.0, retries=1, cookies=No
                 if isinstance(c, dict) and "name" in c and "value" in c:
                     cookie_dict[c["name"]] = c["value"]
 
-    if cookie_dict:
-        parsed = urlparse(url)
-        fingerprint.headers["Referer"] = f"{parsed.scheme}://{parsed.netloc}/"
-
     for attempt in range(retries + 1):
+        req_headers = dict(fingerprint.headers)
+        if cookie_dict:
+            parsed = urlparse(url)
+            req_headers["Referer"] = f"{parsed.scheme}://{parsed.netloc}/"
         try:
             # .json endpoints (instagram-style) have no DOM to sniff, so the
             # decision runs on status codes alone
             if url.split("?")[0].endswith(".json"):
                 cookie_str = "; ".join([f"{k}={v}" for k, v in cookie_dict.items()])
-                req_headers = dict(fingerprint.headers)
-                req_headers["Accept"] = "application/json"
+                json_headers = dict(req_headers)
+                json_headers["Accept"] = "application/json"
                 if cookie_str:
-                    req_headers["Cookie"] = cookie_str
-                async with AsyncSession(timeout=timeout) as session:
-                    response = await safe_get(session, url, headers=req_headers, timeout=timeout)
+                    json_headers["Cookie"] = cookie_str
+                async with AsyncSession(
+                    impersonate=fingerprint.impersonate_id or "chrome131",
+                    timeout=timeout,
+                ) as session:
+                    response = await safe_get(session, url, headers=json_headers, timeout=timeout)
                 status_code = response.status_code
                 html = response.text
                 final_url = str(response.url or url)
@@ -209,7 +212,7 @@ async def quick_scrape(url, fingerprint=None, timeout=7.0, retries=1, cookies=No
                 response = await safe_get(
                     session,
                     url,
-                    headers=fingerprint.headers,
+                    headers=req_headers,
                     timeout=timeout,
                 )
 
@@ -220,7 +223,7 @@ async def quick_scrape(url, fingerprint=None, timeout=7.0, retries=1, cookies=No
                     response = await safe_get(
                         session,
                         refresh_url,
-                        headers=fingerprint.headers,
+                        headers=req_headers,
                         timeout=timeout,
                     )
                     elapsed = time.time() - start
@@ -262,49 +265,52 @@ async def quick_scrape(url, fingerprint=None, timeout=7.0, retries=1, cookies=No
             )
 
 
+WAF_STRATEGIES = [
+    {
+        "name": "Safari iOS Mobile",
+        "impersonate": "safari17_0",
+        "headers": {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://t.co/"
+        }
+    },
+    {
+        "name": "Safari macOS",
+        "impersonate": "safari15_3",
+        "headers": {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.3 Safari/605.1.15",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://www.facebook.com/"
+        }
+    },
+    {
+        "name": "Googlebot Search",
+        "impersonate": "chrome116",
+        "headers": {
+            "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://www.google.com/"
+        }
+    },
+    {
+        "name": "Bingbot",
+        "impersonate": "edge101",
+        "headers": {
+            "User-Agent": "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)",
+            "Accept": "*/*"
+        }
+    }
+]
+
+
 async def advanced_waf_scrape(url, timeout=12.0):
     """
     Layer 1c: Advanced WAF Bypass Matrix.
     Systematically rotates through proven curl_cffi impersonations and Referers
     to bypass strict WAFs without executing JS.
     """
-    strategies = [
-        {
-            "name": "Safari iOS Mobile",
-            "impersonate": "safari17_0",
-            "headers": {
-                "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Referer": "https://t.co/"
-            }
-        },
-        {
-            "name": "Safari macOS",
-            "impersonate": "safari15_3",
-            "headers": {
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.3 Safari/605.1.15",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Referer": "https://www.facebook.com/"
-            }
-        },
-        {
-            "name": "Googlebot Search",
-            "impersonate": "chrome116",
-            "headers": {
-                "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Referer": "https://www.google.com/"
-            }
-        },
-        {
-            "name": "Bingbot",
-            "impersonate": "edge116",
-            "headers": {
-                "User-Agent": "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)",
-                "Accept": "*/*"
-            }
-        }
-    ]
+    strategies = WAF_STRATEGIES
     
     start = time.time()
     for strategy in strategies:
