@@ -2,7 +2,7 @@ import pytest
 
 from scraper import safe_http
 from scraper import source_fast_paths
-from scraper.safe_http import ResponseTooLargeError, TooManyRedirectsError, safe_request
+from scraper.safe_http import ResponseTooLargeError, TooManyRedirectsError, resolve_request_timeout, safe_request
 
 
 class _Quit:
@@ -222,3 +222,70 @@ async def test_redirect_limit_is_enforced(allow_test_urls):
         )
 
     assert len(session.calls) == 3
+
+
+class _SessionWithTimeout:
+    def __init__(self, timeout=None):
+        self.timeout = timeout
+
+
+def test_bad_declared_timeout_falls_back_to_the_default():
+    assert resolve_request_timeout(_SessionWithTimeout(), "banana") == (
+        safe_http.request_timeout_seconds()
+    )
+
+
+def test_non_numeric_declared_timeout_falls_back():
+    assert resolve_request_timeout(_SessionWithTimeout(), object()) == (
+        safe_http.request_timeout_seconds()
+    )
+
+
+def test_valid_numeric_string_declared_timeout_is_honored():
+    assert resolve_request_timeout(_SessionWithTimeout(), "45") == 45.0
+
+
+@pytest.mark.asyncio
+async def test_referer_and_origin_are_stripped_on_cross_origin_redirect(allow_test_urls):
+    first = FakeResponse(
+        302,
+        {"location": "https://other.example/final"},
+        url="https://start.example/path",
+    )
+    final = FakeResponse(200, chunks=[b"safe"], url="https://other.example/final")
+    session = FakeSession([first, final])
+
+    await safe_request(
+        session,
+        "GET",
+        "https://start.example/path",
+        headers={
+            "Referer": "https://start.example/secret-page",
+            "Origin": "https://start.example",
+            "Accept": "text/html",
+        },
+    )
+
+    _, _, second_kwargs = session.calls[1]
+    assert second_kwargs["headers"] == {"Accept": "text/html"}
+
+
+@pytest.mark.asyncio
+async def test_referer_survives_same_origin_redirect(allow_test_urls):
+    first = FakeResponse(
+        302,
+        {"location": "https://start.example/next"},
+        url="https://start.example/path",
+    )
+    final = FakeResponse(200, chunks=[b"ok"], url="https://start.example/next")
+    session = FakeSession([first, final])
+
+    await safe_request(
+        session,
+        "GET",
+        "https://start.example/path",
+        headers={"Referer": "https://start.example/", "Accept": "text/html"},
+    )
+
+    _, _, second_kwargs = session.calls[1]
+    assert second_kwargs["headers"]["Referer"] == "https://start.example/"

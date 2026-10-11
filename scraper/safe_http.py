@@ -52,7 +52,7 @@ def resolve_request_timeout(session, declared=None) -> float:
         try:
             return max(1.0, float(declared)) + bonus
         except (TypeError, ValueError):
-            return declared
+            return request_timeout_seconds() + bonus
     session_value = getattr(session, "timeout", None)
     if isinstance(session_value, (int, float)) and not isinstance(session_value, bool):
         return max(float(session_value), 20.0) + bonus
@@ -69,7 +69,13 @@ def _without_sensitive_headers(headers) -> dict:
     return {
         key: value
         for key, value in dict(headers or {}).items()
-        if key.lower() not in {"authorization", "proxy-authorization", "cookie"}
+        if key.lower() not in {
+            "authorization",
+            "proxy-authorization",
+            "cookie",
+            "referer",
+            "origin",
+        }
     }
 
 
