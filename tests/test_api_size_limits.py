@@ -122,3 +122,11 @@ def test_best_capture_path_applies_same_content_limit(monkeypatch):
     assert result["content_returned_bytes"] == 7
     assert result["best_attempt"]["html_length"] == 4
     assert "content_truncated" in result["diagnostics"]
+
+
+def test_content_bytes_env_is_clamped_to_a_safe_upper_bound(monkeypatch):
+    monkeypatch.setenv("YADA_MAX_CONTENT_BYTES", "999999999999")
+    assert engine_mod._max_content_bytes() == 64 * 1024 * 1024
+
+    monkeypatch.setenv("YADA_MAX_CONTENT_BYTES", str(8 * 1024 * 1024))
+    assert engine_mod._max_content_bytes() == 8 * 1024 * 1024

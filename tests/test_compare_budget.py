@@ -83,3 +83,55 @@ async def test_compare_unaffected_when_all_layers_finish_fast(monkeypatch, tmp_p
     assert len(result.layers) == 9
     assert all("timeout" not in layer["diagnostics"] for layer in result.layers)
     assert result.fastest is not None
+
+
+@pytest.mark.asyncio
+async def test_compare_skips_browser_layers_when_disallowed(monkeypatch, tmp_path):
+    memory = SiteMemory(str(tmp_path / "memory.json"))
+    engine = ScraperEngine.__new__(ScraperEngine)
+    engine.memory = memory
+
+    for name in ("raw_scrape", "mobile_scrape", "quick_scrape", "crawler_scrape", "scrape_ultimate"):
+        monkeypatch.setattr(engine_mod, name, _ok)
+
+    browser_called = []
+
+    async def fake_browser(url, *args, **kwargs):
+        browser_called.append(url)
+        return _ok(url)
+
+    monkeypatch.setattr(engine, "_admitted_browser_call", fake_browser, raising=False)
+
+    result = await engine.compare("https://fast.example", allow_browser=False)
+
+    assert browser_called == []
+    layer_names = [layer["layer"] for layer in result.layers]
+    assert "layer4_stealth" not in layer_names
+    assert "layer5_full" not in layer_names
+    assert len(result.layers) == 7
+
+
+@pytest.mark.asyncio
+async def test_compare_still_launches_browsers_by_default(monkeypatch, tmp_path):
+    memory = SiteMemory(str(tmp_path / "memory.json"))
+    engine = ScraperEngine.__new__(ScraperEngine)
+    engine.memory = memory
+
+    for name in ("raw_scrape", "mobile_scrape", "quick_scrape", "crawler_scrape", "scrape_ultimate"):
+        monkeypatch.setattr(engine_mod, name, _ok)
+
+    browser_called = []
+
+    async def fake_browser(url, *args, **kwargs):
+        browser_called.append(url)
+        return _ok(url)
+
+    monkeypatch.setattr(engine, "_admitted_browser_call", fake_browser, raising=False)
+
+    result = await engine.compare("https://fast.example")
+
+    assert len(browser_called) == 2
+    layer_names = [layer["layer"] for layer in result.layers]
+    assert "layer4_stealth" in layer_names
+    assert "layer5_full" in layer_names
+    assert len(result.layers) == 9

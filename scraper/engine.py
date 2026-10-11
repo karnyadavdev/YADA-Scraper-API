@@ -112,7 +112,9 @@ def _max_content_bytes():
         configured = int(os.getenv("YADA_MAX_CONTENT_BYTES", str(default)))
     except (TypeError, ValueError):
         return default
-    return configured if configured > 0 else default
+    if configured <= 0:
+        return default
+    return min(configured, 64 * 1024 * 1024)
 
 
 _LONE_SURROGATES = re.compile(r"[\ud800-\udfff]")
@@ -914,7 +916,7 @@ class ScraperEngine:
 
         return res
 
-    async def compare(self, url, solve_challenges=False):
+    async def compare(self, url, solve_challenges=False, allow_browser=True):
         start = time.time()
         deadline = start + _scrape_budget()
         fp1 = make_identity()
@@ -930,22 +932,25 @@ class ScraperEngine:
             crawler_scrape(url, bot_type="googlebot"),
             crawler_scrape(url, bot_type="bingbot"),
             crawler_scrape(url, bot_type="duckduckbot"),
-            self._admitted_browser_call(
-                stealth_scrape,
-                url,
-                fingerprint=fp2,
-                solve_challenges=solve_challenges,
-                deadline=deadline,
-            ),
-            self._admitted_browser_call(
-                full_scrape,
-                url,
-                fingerprint=fp3,
-                solve_challenges=solve_challenges,
-                deadline=deadline,
-            ),
-            scrape_ultimate(url)
         ]
+        if allow_browser:
+            coros.extend([
+                self._admitted_browser_call(
+                    stealth_scrape,
+                    url,
+                    fingerprint=fp2,
+                    solve_challenges=solve_challenges,
+                    deadline=deadline,
+                ),
+                self._admitted_browser_call(
+                    full_scrape,
+                    url,
+                    fingerprint=fp3,
+                    solve_challenges=solve_challenges,
+                    deadline=deadline,
+                ),
+            ])
+        coros.append(scrape_ultimate(url))
 
         if valid_cookies:
             coros.append(quick_scrape(url, fingerprint=fp_cookies, cookies=valid_cookies))
@@ -1020,13 +1025,16 @@ class ScraperEngine:
         process_result(results[2], "layer2_cookie_no_cookies", "Layer 2: Hybrid Cookie (No Cookies Cached)")
         process_result(results[3], "layer3_crawler", "Layer 3: Googlebot Bot Impersonation")
         process_result(results[4], "layer3_crawler_bing", "Layer 3: Bingbot Bot Impersonation")
-        process_result(results[5], "layer3_crawler_duckduckgo", "Layer 3: DuckDuckBot Impersonation")
-        process_result(results[6], "layer4_stealth", "Layer 4: Playwright (Stealth Headless)")
-        process_result(results[7], "layer5_full", "Layer 5: Full Browser")
-        process_result(results[8], "layer6_ultimate", "Layer 6: TLS Impersonation Fallback")
+        process_result(results[5], "layer3_crawler_duckduckgo", "Layer 3: DuckDuckBot Bot Impersonation")
+        next_index = 6
+        if allow_browser:
+            process_result(results[next_index], "layer4_stealth", "Layer 4: Playwright (Stealth Headless)")
+            process_result(results[next_index + 1], "layer5_full", "Layer 5: Full Browser")
+            next_index += 2
+        process_result(results[next_index], "layer6_ultimate", "Layer 6: TLS Impersonation Fallback")
 
         if valid_cookies:
-            process_result(results[9], "layer2_cookie", "Layer 2: Hybrid Cookie (With Cookies Cached)")
+            process_result(results[next_index + 1], "layer2_cookie", "Layer 2: Hybrid Cookie (With Cookies Cached)")
 
         fast_layer = best_layer in ("layer1_simple", "layer2_cookie") or (
             best_layer or ""

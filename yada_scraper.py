@@ -178,8 +178,8 @@ async def _engine_source_bulk(urls, allow_browser=True):
     return await engine.scrape_source_bulk(urls)
 
 
-async def _engine_compare(url):
-    return await engine.compare(url)
+async def _engine_compare(url, allow_browser=True):
+    return await engine.compare(url, allow_browser=allow_browser)
 
 def _key_matches(provided: Optional[str], required: str) -> bool:
     if not provided:
@@ -383,6 +383,7 @@ async def do_scrape_post(
 async def do_compare(
     url: str = Query(..., description="URL to compare all layers on"),
     timeout_seconds: float = Query(180.0, ge=1.0, le=600.0),
+    allow_browser: bool = Query(True, description="Allow browser fallback layers (Layer 4/5)"),
     x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
 ):
     _enforce_api_key(x_api_key)
@@ -390,7 +391,7 @@ async def do_compare(
 
     try:
         result = await asyncio.wait_for(
-            _engine_compare(url=url),
+            _engine_compare(url=url, allow_browser=allow_browser),
             timeout=max(1.0, min(float(timeout_seconds), 600.0)),
         )
     except asyncio.TimeoutError:
