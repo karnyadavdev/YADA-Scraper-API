@@ -466,6 +466,69 @@ def _json_ld_lines(soup, limit=8):
     return lines[:limit]
 
 
+def _is_instagram_post_url(url):
+    return bool(re.search(r"/(?:p|reel|reels|tv)/", urlparse(url).path))
+
+
+def _instagram_post_lines(description, title):
+    desc = _clean_line(description)
+    if not desc:
+        return []
+    match = re.match(
+        r"(?P<likes>[\d,.]+[KMB]?) likes?, "
+        r"(?P<comments>[\d,.]+[KMB]?) comments? - "
+        r"(?P<user>\S+) on (?P<date>.+?): "
+        r"[\"“](?P<caption>.*)[\"”]\.?\s*$",
+        desc,
+    )
+    if not match:
+        return [f"Post {desc}"]
+
+    lines = []
+    author = title.split(" on Instagram")[0].strip() if title else ""
+    if author:
+        lines.append(f"Author {author}")
+    lines.append(f"u/{match.group('user')}")
+    lines.append(f"Posted {match.group('date')}")
+    lines.append(f"Likes {match.group('likes')}")
+    lines.append(f"Comments {match.group('comments')}")
+    lines.append(f"Caption {match.group('caption')}")
+    return lines
+
+
+def _instagram_profile_lines(description, title):
+    desc = _clean_line(description)
+    if not desc:
+        return []
+
+    lines = []
+    name = title.split(" (")[0].strip() if title else ""
+    handle_match = re.search(r"\((@[^)]+)\)", title or "")
+    if name:
+        lines.append(name)
+    if handle_match:
+        lines.append(handle_match.group(1))
+
+    counts = re.match(
+        r"(?P<followers>[\d,.]+[KMB]?) Followers, "
+        r"(?P<following>[\d,.]+[KMB]?) Following, "
+        r"(?P<posts>[\d,.]+[KMB]?) Posts",
+        desc,
+    )
+    if counts:
+        lines.append(
+            f"{counts.group('followers')} Followers, "
+            f"{counts.group('following')} Following, "
+            f"{counts.group('posts')} Posts"
+        )
+
+    bio = re.search(r"on Instagram:\s*[\"“](.*?)[\"”]\s*$", desc)
+    if bio and bio.group(1):
+        lines.append(f"Bio {bio.group(1)}")
+
+    return lines or [desc]
+
+
 def _compact_meta_html(html, url, family):
     soup = BeautifulSoup(html or "", "lxml")
     title = _meta_value(soup, "og:title", "twitter:title") or _title_from_html(html) or url
@@ -476,8 +539,20 @@ def _compact_meta_html(html, url, family):
     if link and link.get("href"):
         canonical = link.get("href")
 
+    is_instagram_post = family == "instagram" and _is_instagram_post_url(url)
+    if family == "instagram":
+        if is_instagram_post:
+            description = _meta_value(soup, "og:description") or description
+        else:
+            description = _meta_value(soup, "description") or description
+
     lines = []
-    if description:
+    if family == "instagram":
+        if is_instagram_post:
+            lines.extend(_instagram_post_lines(description, title))
+        else:
+            lines.extend(_instagram_profile_lines(description, title))
+    elif description:
         lines.append(description)
     if canonical and canonical != url:
         lines.append(canonical)
@@ -517,7 +592,7 @@ def _compact_meta_html(html, url, family):
 
     combined = " ".join([title, description, page_text[:2000]]).lower()
     enough = len(" ".join(lines)) >= 120 or bool(title and description)
-    if family == "instagram":
+    if family == "instagram" and not is_instagram_post:
         enough = enough and ("followers" in description.lower() or "instagram" not in title.lower())
     if family == "linkedin":
         enough = enough and "sign in" not in title.lower()
@@ -3402,6 +3477,10 @@ def _instagram_bulk_result(url, response, start):
         return ""
 
     description = meta_value("og:description", "twitter:description", "description")
+    if _is_instagram_post_url(final_url):
+        description = meta_value("og:description") or description
+    else:
+        description = meta_value("description") or description
     image_url = meta_value("og:image", "twitter:image")
     title = meta_value("og:title", "twitter:title")
     if not title and soup.title:
@@ -3436,12 +3515,17 @@ def _instagram_bulk_result(url, response, start):
     blocked = auth_title or any(marker in combined for marker in blocked_markers)
     success = bool(status_ok and identity_matches and metadata_specific and not blocked)
 
+    if _is_instagram_post_url(final_url):
+        detail_lines = _instagram_post_lines(description, title)
+    else:
+        detail_lines = _instagram_profile_lines(description, title)
+
     lines = [
         f"Requested URL: {url}",
         f"Title: {title or 'Not found'}",
         "",
         "Details:",
-        description or "Not found",
+        *(detail_lines or ["Not found"]),
         "",
         f"Image URL: {image_url or 'Not found'}",
     ]
