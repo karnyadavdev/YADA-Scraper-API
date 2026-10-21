@@ -1552,6 +1552,25 @@ def reddit_json_url(url):
     ))
 
 
+def reddit_comments_url(url, sub=None):
+    parsed = urlparse(url)
+    if sub is None:
+        match = re.search(r"/r/([^/]+)/", parsed.path, flags=re.I)
+        sub = match.group(1) if match else ""
+    post = re.search(r"/comments/([a-z0-9]+)", parsed.path, flags=re.I)
+    if not sub or not post:
+        return None
+    netloc = parsed.netloc.lower()
+    if netloc == "reddit.com":
+        netloc = "www.reddit.com"
+    return f"{parsed.scheme}://{netloc}/svc/shreddit/comments/r/{sub}/{post.group(1)}"
+
+
+def _reddit_sub_from_page(html):
+    match = re.search(r'subreddit-prefixed-name="r/([^"]+)"', html or "", flags=re.I)
+    return match.group(1) if match else ""
+
+
 def _reddit_body(value):
     return _clean_line(
         value.get("body")
@@ -1716,14 +1735,55 @@ def _reddit_lines_from_html(node):
     return lines
 
 
+def _reddit_unwrap_templates(html):
+    html = re.sub(r"<template\b[^>]*>", "", html, flags=re.I)
+    return re.sub(r"</template>", "", html, flags=re.I)
+
+
+def _reddit_listing_to_html(soup, url):
+    lines = []
+    subreddit = ""
+    for post in soup.find_all("shreddit-post"):
+        title = _clean_line(post.get("post-title") or "")
+        if not title:
+            continue
+        if not subreddit:
+            subreddit = _clean_line(post.get("subreddit-prefixed-name") or "")
+        author = _clean_line(post.get("author") or "")
+        score = _clean_line(post.get("score") or "")
+        meta = " ".join(
+            part
+            for part in (
+                f"u/{author}" if author else "",
+                f"score {score}" if score else "",
+            )
+            if part
+        )
+        lines.append(f"{title} ({meta})" if meta else title)
+
+    if len(lines) < 2 or sum(len(line) for line in lines) < 120:
+        return None
+
+    if not subreddit:
+        match = re.search(r"/r/([^/]+)/", urlparse(url).path, flags=re.I)
+        subreddit = f"r/{match.group(1)}" if match else "reddit"
+    return _html_doc(subreddit, url, [("Posts", lines[:200])])
+
+
 def reddit_html_to_html(html, url):
     if not html:
         return None
 
-    soup = BeautifulSoup(html, "lxml")
+    soup = BeautifulSoup(_reddit_unwrap_templates(html), "html.parser")
     page_text = soup.get_text(" ", strip=True).lower()
     if "you've been blocked by network security" in page_text:
         return None
+
+    path = urlparse(url).path
+    if "/comments/" not in path and "/r/" in path:
+        listing = _reddit_listing_to_html(soup, url)
+        if listing:
+            return listing
 
     post = soup.find("shreddit-post")
     title = ""
@@ -2506,6 +2566,117 @@ async def scrape_reddit_bulk(urls, timeout=15.0, cookies=None, memory=None):
         ) as session:
             return await asyncio.gather(*(one(item) for item in items))
 
+    html_headers = {
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://www.reddit.com/",
+        "User-Agent": CHROME120_MAC_UA,
+    }
+
+    async def read_html(session, original_url):
+        started = time.time()
+        status_code = 0
+        page_body = ""
+        comments_body = ""
+        try:
+            page = await safe_get(session, original_url, headers=html_headers)
+            status_code = page.status_code
+            page_body = page.text or ""
+            comment_url = reddit_comments_url(original_url)
+            if not comment_url:
+                page_sub = _reddit_sub_from_page(page_body)
+                if page_sub:
+                    comment_url = reddit_comments_url(original_url, sub=page_sub)
+            if comment_url:
+                comments = await safe_get(session, comment_url, headers=html_headers)
+                status_code = status_code or comments.status_code
+                comments_body = comments.text or ""
+        except Exception as exc:
+            return SourceResult(
+                False,
+                status_code=0,
+                reason=f"Reddit HTML source path failed: {type(exc).__name__}",
+                response_time=time.time() - started,
+                final_url=original_url,
+            )
+
+        parts = []
+        challenged = 0
+        for body in (page_body, comments_body):
+            if not body:
+                continue
+            lower = body.lower()
+            if "you've been blocked by network security" in lower or "prove your humanity" in lower:
+                challenged += 1
+                continue
+            parts.append(body)
+
+        if not parts:
+            return SourceResult(
+                False,
+                html=page_body or comments_body,
+                status_code=status_code,
+                reason="Reddit HTML source path got bot challenge",
+                response_time=time.time() - started,
+                final_url=original_url,
+            )
+
+        combined = "".join(parts)
+        html = reddit_html_to_html(combined, original_url)
+        if not html:
+            return SourceResult(
+                False,
+                html=combined,
+                status_code=status_code,
+                reason=(
+                    "Reddit HTML source path got bot challenge"
+                    if challenged
+                    else "Reddit HTML source path could not extract readable content"
+                ),
+                response_time=time.time() - started,
+                final_url=original_url,
+            )
+
+        return SourceResult(
+            True,
+            html=html,
+            status_code=status_code,
+            reason="Reddit HTML source path",
+            response_time=time.time() - started,
+            final_url=original_url,
+        )
+
+    async def run_html_items(items, request_timeout=None):
+        if not items:
+            return []
+        async with AsyncSession(
+            impersonate="chrome120",
+            timeout=request_timeout or timeout,
+            max_clients=min(10, max(1, len(items))),
+        ) as session:
+            try:
+                await safe_get(session, "https://www.reddit.com/r/", headers=html_headers)
+            except Exception:
+                pass
+
+            sem = asyncio.Semaphore(4)
+
+            async def one(item):
+                async with sem:
+                    result = await read_html(session, item[1])
+                    tries = 1
+                    while (
+                        not result.success
+                        and "bot challenge" in (result.reason or "")
+                        and tries < 3
+                    ):
+                        await asyncio.sleep(2.0)
+                        result = await read_html(session, item[1])
+                        tries += 1
+                    return item, result
+
+            return await asyncio.gather(*(one(item) for item in items))
+
     if seed_cookies:
         needs_warmup = {}
         for host, items in by_host.items():
@@ -2543,6 +2714,18 @@ async def scrape_reddit_bulk(urls, timeout=15.0, cookies=None, memory=None):
                 if retryable_reddit_result(result):
                     needs_warmup.setdefault(host, []).append(item)
         by_host = needs_warmup
+        if not by_host:
+            return results
+
+    if by_host:
+        needs_html = {}
+        for host, items in by_host.items():
+            for item, result in await run_html_items(items):
+                idx, _, _ = item
+                results[idx] = result
+                if not result.success:
+                    needs_html.setdefault(host, []).append(item)
+        by_host = needs_html
         if not by_host:
             return results
 
