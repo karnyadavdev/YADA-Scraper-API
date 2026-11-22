@@ -39,7 +39,7 @@ Auto mode walks a strategy ladder and stops at the first clean capture:
 - Only public HTTP(S) URLs on ports 80/443; loopback and private ranges are rejected before any request
 - Credentials are stripped on cross-origin redirects
 - Caps: URL 4096 chars, response 8 MiB
-- Test suite: 246 offline tests, no network needed; CI runs on every push
+- Test suite: 263 offline tests, no network needed; CI runs on every push
 
 ## Usage
 
